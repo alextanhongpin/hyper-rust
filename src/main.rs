@@ -13,6 +13,7 @@ lazy_static! {
     static ref USERS_PATH: Regex = Regex::new("^/users/?$").unwrap();
 }
 
+const RANDOM_PATH: &str = "/random";
 const ECHO_PATH: &str = "/echo";
 const ECHO_UPPERCASE_PATH: &str = "/echo/uppercase";
 const ECHO_REVERSE_PATH: &str = "/echo/reverse";
@@ -118,6 +119,9 @@ async fn request_handler(
             let full_body = hyper::body::to_bytes(req.into_body()).await?;
             let reversed = full_body.iter().rev().cloned().collect::<Vec<u8>>();
             Response::new(Body::from(reversed))
+        } else if path == RANDOM_PATH {
+            let random_byte = rand::random::<u8>();
+            Response::new(Body::from(random_byte.to_string()))
         } else {
             let mut not_found = Response::default();
             *not_found.status_mut() = StatusCode::NOT_FOUND;
