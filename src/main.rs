@@ -2,8 +2,10 @@ use futures::TryStreamExt as _;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use lazy_static::lazy_static;
+use log::info;
 use regex::Regex;
 use slab::Slab;
+use std::env;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -208,7 +210,13 @@ fn response_with_code(status_code: StatusCode) -> Response<Body> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = ([127, 0, 0, 1], 3000).into();
+    info!("starting server...");
+
+    let addr = env::var("ADDRESS")
+        .unwrap_or_else(|_| "127.0.0.1:3000".into())
+        .parse()
+        .expect("can't parse ADDRESS envvar");
+    // let addr = ([127, 0, 0, 1], 3000).into();
     let user_db = Arc::new(Mutex::new(Slab::new()));
     let service = make_service_fn(move |_conn| {
         let user_db = Arc::clone(&user_db);
@@ -221,7 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let server = Server::bind(&addr).serve(service);
-    println!("listening to server on {}", addr);
+    info!("listening to server on {}", addr);
     server.await?;
     Ok(())
 }
