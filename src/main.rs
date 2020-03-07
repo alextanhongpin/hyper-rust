@@ -30,7 +30,7 @@ const INDEX: &'static str = "
     </html>
 ";
 
-async fn echo(req: Request<Body>, user_db: UserDb) -> Result<Response<Body>, hyper::Error> {
+async fn request_handler(req: Request<Body>, user_db: UserDb) -> Result<Response<Body>, hyper::Error> {
     let response = match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => Response::new(Body::from(
             "try POST-int data from /echo, e.g. curl -XPOST -d 'hello world' localhost:3000/echo",
@@ -43,7 +43,6 @@ async fn echo(req: Request<Body>, user_db: UserDb) -> Result<Response<Body>, hyp
                 .map(|x| x as usize);
 
             let mut users = user_db.lock().unwrap();
-            println!("users: {:?}", users);
             match (method, user_id) {
                 (&Method::POST, None) => {
                     let id = users.insert(UserData {});
@@ -112,13 +111,15 @@ fn response_with_code(status_code: StatusCode) -> Response<Body> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = ([127, 0, 0, 1], 3000).into();
-    let service = make_service_fn(move |_conn| async {
-        // NOTE: This is wrong, as it will be recreated with every request.
-        let user_db = Arc::new(Mutex::new(Slab::new()));
-        Ok::<_, hyper::Error>(service_fn(move |req| {
-            let db = user_db.clone();
-            echo(req, db)
-        }))
+    let user_db = Arc::new(Mutex::new(Slab::new()));
+    let service = make_service_fn(move|_conn| {
+        let user_db = Arc::clone(&user_db);
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| {
+                let users = user_db.clone();
+                request_handler(req, users)
+            }))
+        }
     });
 
     let server = Server::bind(&addr).serve(service);
