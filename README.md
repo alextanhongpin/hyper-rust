@@ -8,3 +8,15 @@ $ cargo install cargo-watch
 # Upgrade.
 $ cargo install --force cargo-watch
 ````
+
+## Rustfmt
+
+```bash
+$ cargo +nightly fmt
+```
+
+## Start
+
+```bash
+$ cargo watch -x 'run'
+```
