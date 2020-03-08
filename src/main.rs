@@ -9,9 +9,14 @@ use regex::Regex;
 use slab::Slab;
 use std::env;
 use std::fmt;
+use std::fs::File;
+use std::io::{self, Read};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
 
 lazy_static! {
     static ref INDEX_PATH: Regex = Regex::new("^/(index\\.html?)?$").unwrap();
@@ -36,6 +41,11 @@ impl fmt::Display for UserData {
 }
 
 type UserDb = Arc<Mutex<Slab<UserData>>>;
+
+#[derive(Deserialize)]
+struct Config {
+    address: SocketAddr,
+}
 
 const INDEX: &'static str = "
     <!doctype HTML>
@@ -250,13 +260,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .subcommand(SubCommand::with_name("key").about("generates a secret key for cookie"))
         .get_matches();
 
+    let config = File::open("microservice.toml")
+        .and_then(|mut file| {
+            let mut buffer = String::new();
+            file.read_to_string(&mut buffer)?;
+            Ok(buffer)
+        })
+        .and_then(|buffer| {
+            toml::from_str::<Config>(&buffer)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+        })
+        .map_err(|err| {
+            warn!("Can't read config file: {}", err);
+        })
+        .ok();
+
     let addr = matches
         .value_of("address")
         .map(|s| s.to_owned())
         .or(env::var("ADDRESS").ok())
-        .unwrap_or_else(|| "127.0.0.1:3000".into())
-        .parse()
-        .expect("can't parse address variable");
+        .and_then(|addr| addr.parse().ok())
+        .or(config.map(|config| config.address))
+        .or_else(|| Some(([127, 0, 0, 1], 3000).into()))
+        .unwrap();
 
     // NOTE: The original way of getting address.
     // let addr = ([127, 0, 0, 1], 3000).into();
