@@ -5,6 +5,7 @@ use futures::TryStreamExt as _;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use lazy_static::lazy_static;
+use rand_distr::{Bernoulli, Distribution, Normal, Uniform};
 use regex::Regex;
 use slab::Slab;
 use std::env;
@@ -12,11 +13,13 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read};
 use std::net::SocketAddr;
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
+use serde_json;
 
 lazy_static! {
     static ref INDEX_PATH: Regex = Regex::new("^/(index\\.html?)?$").unwrap();
@@ -47,6 +50,19 @@ struct Config {
     address: SocketAddr,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "distribution", content = "parameters", rename_all = "camelCase")]
+enum RngRequest {
+    Uniform { range: Range<i32> },
+    Normal { mean: f64, std_dev: f64 },
+    Bernoulli { p: f64 },
+}
+
+#[derive(Serialize)]
+struct RngResponse {
+    value: f64,
+}
+
 const INDEX: &'static str = "
     <!doctype HTML>
     <html>
@@ -58,6 +74,20 @@ const INDEX: &'static str = "
         </body>
     </html>
 ";
+
+fn handle_request(request: RngRequest) -> RngResponse {
+    let mut rng = rand::thread_rng();
+    let value = {
+        match request {
+            RngRequest::Uniform { range } => Uniform::from(range).sample(&mut rng) as f64,
+            RngRequest::Normal { mean, std_dev } => {
+                Normal::new(mean, std_dev).unwrap().sample(&mut rng) as f64
+            }
+            RngRequest::Bernoulli { p } => Bernoulli::new(p).unwrap().sample(&mut rng) as i8 as f64,
+        }
+    };
+    RngResponse { value }
+}
 
 async fn request_handler(
     req: Request<Body>,
@@ -136,8 +166,19 @@ async fn request_handler(
             let reversed = full_body.iter().rev().cloned().collect::<Vec<u8>>();
             Response::new(Body::from(reversed))
         } else if path == RANDOM_PATH {
-            let random_byte = rand::random::<u8>();
-            Response::new(Body::from(random_byte.to_string()))
+            // $ curl -XPOST -d '{"distribution": "uniform", "parameters": {"range": {"start": 10, "end": 100}}}' localhost:3000/random
+
+            let chunks = hyper::body::to_bytes(req.into_body()).await?;
+            let res = serde_json::from_slice::<RngRequest>(chunks.as_ref())
+                .map(handle_request)
+                .and_then(|resp| serde_json::to_string(&resp));
+            match res {
+                Ok(body) => Response::new(body.into()),
+                Err(e) => {
+                    warn!("error {:?}", e);
+                    response_with_code(StatusCode::UNPROCESSABLE_ENTITY)
+                }
+            }
         } else {
             let mut not_found = Response::default();
             *not_found.status_mut() = StatusCode::NOT_FOUND;

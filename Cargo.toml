@@ -20,4 +20,6 @@ slab = "0.4.2"
 tokio = { version = "0.2.13", features = ["full"] }
 serde = "1.0.104"
 serde_derive = "1.0.104"
+serde_json = "1.0.48"
 toml = "0.5.6"
+rand_distr = "0.2.2"
