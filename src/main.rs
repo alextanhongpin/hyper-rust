@@ -1,13 +1,17 @@
+use clap::{
+    crate_authors, crate_description, crate_name, crate_version, App, AppSettings, Arg, SubCommand,
+};
 use futures::TryStreamExt as _;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use lazy_static::lazy_static;
-use log::info;
 use regex::Regex;
 use slab::Slab;
 use std::env;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+#[macro_use]
+extern crate log;
 
 lazy_static! {
     static ref INDEX_PATH: Regex = Regex::new("^/(index\\.html?)?$").unwrap();
@@ -210,12 +214,51 @@ fn response_with_code(status_code: StatusCode) -> Response<Body> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    env_logger::init();
     info!("starting server...");
 
-    let addr = env::var("ADDRESS")
-        .unwrap_or_else(|_| "127.0.0.1:3000".into())
+    let matches = App::new(crate_name!())
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
+        .arg(
+            Arg::with_name("address")
+                .short("a")
+                .long("address")
+                .value_name("ADDRESS")
+                .help("Sets an address")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .help("Sets a custom config file")
+                .takes_value(true),
+        )
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand(
+            SubCommand::with_name("run").about("run the server").arg(
+                Arg::with_name("address")
+                    .short("a")
+                    .long("address")
+                    .takes_value(true)
+                    .help("address of the server"),
+            ),
+        )
+        .subcommand(SubCommand::with_name("key").about("generates a secret key for cookie"))
+        .get_matches();
+
+    let addr = matches
+        .value_of("address")
+        .map(|s| s.to_owned())
+        .or(env::var("ADDRESS").ok())
+        .unwrap_or_else(|| "127.0.0.1:3000".into())
         .parse()
-        .expect("can't parse ADDRESS envvar");
+        .expect("can't parse address variable");
+
+    // NOTE: The original way of getting address.
     // let addr = ([127, 0, 0, 1], 3000).into();
     let user_db = Arc::new(Mutex::new(Slab::new()));
     let service = make_service_fn(move |_conn| {

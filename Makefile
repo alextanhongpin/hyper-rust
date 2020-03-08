@@ -7,4 +7,7 @@ format:
 	@cargo +nightly fmt
 
 start:
-	@cargo watch -x run
+	@cargo run -- run
+
+watch:
+	@cargo watch -x 'run -- run'

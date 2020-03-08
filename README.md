@@ -20,3 +20,10 @@ $ cargo +nightly fmt
 ```bash
 $ cargo watch -x 'run'
 ```
+
+## CLI
+
+```bash
+$ cargo run -- --help
+$ cargo run -- run --address 127.0.0.1:4567
+```
